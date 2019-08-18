@@ -43,7 +43,8 @@ def render(source="", output=[]):
 def main(args=None):
     if not args:
         parser = argparse.ArgumentParser(description="")
-        parser.add_argument("--input", "-i", help="<input wavedrom source filename>")
+        parser.add_argument("--input", "-i", help="<input wavedrom source filename>",
+                            type=argparse.FileType("r"), default="-")
         parser.add_argument("--svg", "-s", help="<output SVG image file name>")
         args = parser.parse_args()
 
@@ -51,11 +52,14 @@ def main(args=None):
     inputfile = args.input
     outputfile = args.svg
 
-    if not inputfile or not outputfile:
+    if not outputfile:
         parser.print_help()
     else:
-        with open(inputfile, "r") as f:
-            jinput = f.read()
+        try:
+            with open(inputfile, "r") as f:
+                jinput = f.read()
+        except(TypeError):
+            jinput = inputfile.read()
 
         output = render(jinput)
         output.saveas(outputfile)
