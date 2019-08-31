@@ -49,20 +49,11 @@ class Options:
         self.fontfamily = fontfamily
         self.fontweight = fontweight
 
+colors = {2: 0, 3: 80, 4: 170, 5: 45, 6: 126, 7: 215}
 
 def type_style(t):
-    if t==2:
-        return ';fill:hsl(0,100%,50%)'
-    elif t==3:
-        return ';fill:hsl(80,100%,50%)'
-    elif t==4:
-        return ';fill:hsl(170,100%,50%)'
-    elif t==5:
-        return ';fill:hsl(45,100%,50%)'
-    elif t==6:
-        return ';fill:hsl(126,100%,50%)'
-    elif t==7:
-        return ';fill:hsl(215,100%,50%)'
+    if t in colors.keys():
+        return ";fill:hsl({},100%,50%)".format(colors[t])
     else:
         return ''
 
@@ -117,25 +108,31 @@ class BitField(SVGBase):
         return self.element.line(start=(x,y), end=(x,y+len))
 
     def get_text(self, body, x, y=None):
-        font = {"font_size": self.opt.fontsize,
-                "font_family": self.opt.fontfamily,
-                "font_weight": self.opt.fontweight,}
         x_list = None
         if x:
             x_list = [x]
         y_list = None
         if y:
             y_list = [y]
-        text = self.element.text('', x=x_list, y=y_list, **font)
+        text = self.element.text('', x=x_list, y=y_list)
         for t in self.tspan_parse(str(body)):
             text.add(t)
         return text
 
     def get_label(self, attr, x, y, step=0, length=0):
-        return self.get_text(attr, x, y)
+        if isinstance(attr, int):
+            attr = int(attr)
+            res = []
+            for i in range(length):
+                val = (attr >> i) & 1
+                xi = x + step * (length / 2 - i - 0.5)
+                res.append(self.get_text(val, xi, y))
+            return res
+        else:
+            return [self.get_text(attr, x, y)]
 
     def get_attrs(self, e, step, lsbm, msbm):
-        x = [step * (self.mod - ((msbm + lsbm) / 2) - 1)]
+        x = step * (self.mod - ((msbm + lsbm) / 2) - 1)
         attr = e['attr']
         bits = e['bits']
         attrs = [attr]
@@ -176,16 +173,18 @@ class BitField(SVGBase):
                 bits.add(self.get_text(msb, x=[step * (self.mod - msbm - 1)]))
             if e.get('name'):
                 x = step*(self.mod-((msbm+lsbm)/2)-1)
-                names.add(self.get_label(e['name'], x, 0))
+                for n in self.get_label(e['name'], x, 0):
+                    names.add(n)
 
             if not e.get('name') or e.get('type'):
                 style = 'fill-opacity:0.1' + type_style(e.get('type', 0))
                 insert = [step * (self.mod - msbm - 1), 0]
                 size = [step * (msbm - lsbm + 1), self.opt.vspace/2]
                 blanks.add(self.element.rect(insert=insert, size=size, style=style))
-            if e.get('attr'):
-                for a in self.get_attrs(e, step, lsbm, msbm):
-                    attrs.add(a)
+            if e.get('attr') is not None:
+                for attr in self.get_attrs(e, step, lsbm, msbm):
+                    for a in attr:
+                        attrs.add(a)
 
         g = self.container.g()
         g.add(blanks)
@@ -223,9 +222,13 @@ class BitField(SVGBase):
 
     def lane(self, desc):
         x = 4.5
-        y = ((self.opt.lanes-self.index-1) *
-             (self.opt.vspace+self.extra_attr_space)) + 0.5
-        g = self.container.g(transform = "translate({},{})".format(x, y))
+        y = (self.opt.lanes-self.index-1)  * self.opt.vspace + 0.5
+        g = self.container.g(transform = "translate({},{})".format(x, y),
+                             text_anchor = "middle",
+                             font_size = self.opt.fontsize,
+                             font_family = self.opt.fontfamily,
+                             font_weight = self.opt.fontweight)
+
         g.add(self.cage(desc))
         g.add(self.labels(desc))
         return g

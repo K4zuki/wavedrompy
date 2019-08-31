@@ -68,20 +68,25 @@ class WaveDrom(SVGBase):
             "0": "000", "1": "111", "x": "xxx", "d": "ddd", "u": "uuu", "z": "zzz",
             "2": "vvv-2", "3": "vvv-3", "4": "vvv-4", "5": "vvv-5"}
 
-        stretch = int(stretch)
-
-        def getBrick(w):
-            if w in stretcher:
-                return stretcher[w]
-            elif w[2] in stretcher:
-                return stretcher[w[2]]
-            else:
-                return stretcher[w[-1]]
-
-        if stretch > 0:
-            return list(chain.from_iterable(([w] + [getBrick(w)]*stretch for w in wave)))
+        if stretch == -0.5:
+            # This is the only valid non-integer value, it essentially means halfing down. Further subsampling
+            # does not work I think..
+            return wave[0::2]
         else:
-            return wave
+            stretch = int(stretch)
+
+            def getBrick(w):
+                if w in stretcher:
+                    return stretcher[w]
+                elif w[2] in stretcher:
+                    return stretcher[w[2]]
+                else:
+                    return stretcher[w[-1]]
+
+            if stretch > 0:
+                return list(chain.from_iterable(([w] + [getBrick(w)]*stretch for w in wave)))
+            else:
+                return wave
 
     def gen_wave_brick(self, prev=None, this=None, stretch=0, repeat=0, subcycle=False):
         sharpedge_clk = { "p": "pclk", "n": "nclk", "P": "Pclk", "N": "Nclk" }
@@ -126,7 +131,8 @@ class WaveDrom(SVGBase):
         if subcycle:
             wave = wave[0:repeat+1]
 
-        wave = self.stretch_bricks(wave, stretch)
+        if not (stretch == -0.5 and this in sharpedge_clk.keys()):
+            wave = self.stretch_bricks(wave, stretch)
 
         return wave
 
@@ -163,7 +169,7 @@ class WaveDrom(SVGBase):
                 repeat += 1
             R.extend(self.gen_wave_brick(Top, This, stretch, repeat, subCycle))
 
-        for i in range(self.lane.phase):
+        for i in range(int(math.ceil(self.lane.phase))):
             R = R[1:]
 
         return R
@@ -178,11 +184,11 @@ class WaveDrom(SVGBase):
         content = []
         for sigx in sig:
             self.lane.period = sigx.get("period", 1)
-            self.lane.phase = int(sigx.get("phase", 0) * 2)
+            self.lane.phase = sigx.get("phase", 0) * 2
             sub_content = []
             sub_content.append([sigx.get("name", " "), sigx.get("phase", 0)])
             if sigx.get("wave"):
-                sub_content.append(self.parse_wave_lane(sigx["wave"], int(self.lane.period * self.lane.hscale - 1)))
+                sub_content.append(self.parse_wave_lane(sigx["wave"], self.lane.period * self.lane.hscale - 1))
             else:
                 sub_content.append(None)
             sub_content.append(data_extract(sigx))
@@ -210,6 +216,44 @@ class WaveDrom(SVGBase):
 
         return ret
 
+    def render_lane_uses(self, val, g):
+        if val[1]:
+            for i in range(len(val[1])):
+                b = self.container.use(href="#{}".format(val[1][i]))
+                b.translate(i * self.lane.xs)
+                g.add(b)
+
+            if val[2] and len(val[2]):
+                labels = self.find_lane_markers(val[1])
+                if len(labels) != 0:
+                    for k in range(len(labels)):
+                        if val[2] and k < len(val[2]):
+                            tx = int(labels[k]) * self.lane.xs + self.lane.xlabel
+                            title = self.element.text("", x=[tx], y=[self.lane.ym], text_anchor="middle")
+                            title.add(self.element.tspan(val[2][k]))
+                            title["xml:space"] = "preserve"
+                            g.add(title)
+
+    def text_width(self, string, size=11):
+        chars = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,34,47,74,74,118,89,25,44,44,52,78,37,
+                 44,37,37,74,74,74,74,74,74,74,74,74,74,37,37,78,78,78,74,135,89,89,96,96,89,81,103,96,37,67,89,74,109,
+                 96,103,89,103,96,89,81,96,89,127,89,87,81,37,37,37,61,74,44,74,74,67,74,74,37,74,74,30,30,67,30,112,74,
+                 74,74,74,44,67,37,74,67,95,66,65,67,44,34,44,78,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+                 0,0,0,0,0,0,37,43,74,74,74,74,34,74,44,98,49,74,78,0,98,73,53,73,44,44,44,77,71,37,44,44,49,74,111,111,
+                 111,81,89,89,89,89,89,89,133,96,89,89,89,89,37,37,37,37,96,96,103,103,103,103,103,78,103,96,96,96,96,
+                 87,89,81,74,74,74,74,74,74,118,67,74,74,74,74,36,36,36,36,74,74,74,74,74,74,74,73,81,74,74,74,74,65,74,
+                 65,89,74,89,74,89,74,96,67,96,67,96,67,96,67,96,82,96,74,89,74,89,74,89,74,89,74,89,74,103,74,103,74,
+                 103,74,103,74,96,74,96,74,37,36,37,36,37,36,37,30,37,36,98,59,67,30,89,67,67,74,30,74,30,74,39,74,44,
+                 74,30,96,74,96,74,96,74,80,96,74,103,74,103,74,103,74,133,126,96,44,96,44,96,44,89,67,89,67,89,67,89,
+                 67,81,38,81,50,81,37,96,74,96,74,96,74,96,74,96,74,96,74,127,95,87,65,87,81,67,81,67,81,67,30,84,97,91,
+                 84,91,84,94,92,73,104,109,91,84,81,84,100,82,76,74,103,91,131,47,40,99,77,37,79,130,100,84,104,114,87,
+                 126,101,87,84,93,84,69,84,46,52,82,52,82,114,89,102,96,100,98,91,70,88,88,77,70,85,89,77,67,84,39,65,
+                 61,39,189,173,153,111,105,61,123,123,106,89,74,37,30,103,74,96,74,96,74,96,74,96,74,96,74,81,91,81,91,
+                 81,130,131,102,84,103,84,87,78,104,81,104,81,88,76,37,189,173,153,103,84,148,90,100,84,89,74,133,118,
+                 103,81]
+
+        return sum([(chars[ord(c)] if ord(c) <= len(chars) else 114) for c in string])*size/100
+
     def render_wave_lane(self, root=[], content="", index=0):
         xmax = 0
         xgmax = 0
@@ -217,7 +261,7 @@ class WaveDrom(SVGBase):
 
         for j, val in enumerate(content):
             name = val[0][0]
-            if name:  # check name
+            if name is not None:
                 dy = self.lane.y0 + j * self.lane.yo
                 g = self.container.g(id="wavelane_{j}_{index}".format(j=j, index=index))
                 g.translate(0, dy)
@@ -227,37 +271,82 @@ class WaveDrom(SVGBase):
                 title["class"] = "info"
                 g.add(title)
 
-                glengths.append(len(name) * self.font_width + self.font_width)
+                glengths.append(self.text_width(name))
 
                 xoffset = val[0][1]
                 xoffset = math.ceil(2 * xoffset) - 2 * xoffset if xoffset > 0 else -2 * xoffset
                 gg = self.container.g(id="wavelane_draw_{j}_{index}".format(j=j, index=index))
                 gg.translate(xoffset * self.lane.xs, 0)
 
-                if val[1]:
-                    for i in range(len(val[1])):
-                        b = self.container.use(href="#{}".format(val[1][i]))
-                        b.translate(i * self.lane.xs)
-                        gg.add(b)
+                self.render_lane_uses(val, gg)
 
-                    if val[2] and len(val[2]):
-                        labels = self.find_lane_markers(val[1])
-                        if len(labels) != 0:
-                            for k in range(len(labels)):
-                                if val[2] and k < len(val[2]):
-                                    tx = int(labels[k]) * self.lane.xs + self.lane.xlabel
-                                    title = self.element.text("", x=[tx], y=[self.lane.ym], text_anchor="middle")
-                                    title.add(self.element.tspan(val[2][k]))
-                                    title["xml:space"] = "preserve"
-                                    gg.add(title)
+                if val[1] and len(val[1]) > xmax:
+                    xmax = len(val[1])
 
-                    if len(val[1]) > xmax:
-                        xmax = len(val[1])
                 g.add(gg)
                 root.add(g)
         self.lane.xmax = xmax
         self.lane.xg = xgmax + 20
         return glengths
+
+    def captext(self, g, cxt, anchor, y):
+        if cxt.get(anchor) and cxt[anchor].get("text"):
+            tmark = self.element.text("", x=[float(cxt.xmax)*float(cxt.xs)/2], y=[y], text_anchor="middle", fill="#000")
+            tmark["xml:space"] = "preserve"
+            tmark.add(self.element.tspan(cxt[anchor]["text"]))
+            g.add(tmark)
+
+    def ticktock(self, g, cxt, ref1, ref2, x, dx, y, length):
+        L = []
+
+        if cxt.get(ref1) is None or cxt[ref1].get(ref2) is None:
+            return
+
+        val = cxt[ref1][ref2]
+
+        if self.is_type_str(val):
+            val = val.split()
+        elif type(val) is int:
+            offset = val
+            val = []
+            for i in range(length):
+                val.append(i + offset)
+
+        if type(val) is list:
+            if len(val) == 0:
+                return
+            elif len(val) == 1:
+                offset = val[0]
+                if self.is_type_str(offset):
+                    L = val
+                else:
+                    for i in range(length):
+                        L[i] = i + offset
+            elif len(val) == 2:
+                offset = int(val[0])
+                step = int(val[1])
+                tmp = val[1].split(".")
+                if len(tmp) == 2:
+                    dp = len(tmp[1])
+
+                if self.is_type_str(offset) or self.is_type_str(step):
+                    L = val
+                else:
+                    offset = step * offset
+                    for i in range(length):
+                        L[i] = "{0:.", dp, "f}".format(step * i + offset)
+            else:
+                L = val
+
+        else:
+            return
+
+        for i in range(length):
+            tmp = L[i]
+            tmark = self.element.text(tmp, x=[i * dx + x], y=[y], text_anchor="middle")
+            tmark["class"] = "muted"
+            tmark["xml:space"] = "preserve"
+            g.add(tmark)
 
     def render_marks(self, root=[], content="", index=0):
         def get_elem(e):
@@ -269,68 +358,6 @@ class WaveDrom(SVGBase):
             else:
                 ret = self.element.tspan(e)
             return ret
-
-        def captext(g, cxt, anchor, y):
-
-            if cxt.get(anchor) and cxt[anchor].get("text"):
-                tmark = self.element.text("", x=[float(cxt.xmax) * float(cxt.xs) / 2],
-                                          y=[y], text_anchor="middle", fill="#000")
-                tmark["xml:space"] = "preserve"
-                [tmark.add(get_elem(e)) for e in cxt[anchor]["text"][1:]]
-                g.add(tmark)
-
-        def ticktock(g, cxt, ref1, ref2, x, dx, y, length):
-            L = []
-
-            if cxt.get(ref1) is None or cxt[ref1].get(ref2) is None:
-                return
-
-            val = cxt[ref1][ref2]
-            if self.is_type_str(val):
-                val = val.split()
-            elif type(val) is int:
-                offset = val
-                val = []
-                for i in range(length):
-                    val.append(i + offset)
-
-            if type(val) is list:
-                if len(val) == 0:
-                    return
-                elif len(val) == 1:
-                    offset = val[0]
-                    if self.is_type_str(offset):
-                        L = val
-                    else:
-                        for i in range(length):
-                            L[i] = i + offset
-
-                elif len(val) == 2:
-                    offset = int(val[0])
-                    step = int(val[1])
-                    tmp = val[1].split(".")
-                    if len(tmp) == 2:
-                        dp = len(tmp[1])
-
-                    if self.is_type_str(offset) or self.is_type_str(step):
-                        L = val
-                    else:
-                        offset = step * offset
-                        for i in range(length):
-                            L[i] = "{0:.", dp, "f}".format(step * i + offset)
-
-                else:
-                    L = val
-
-            else:
-                return
-
-            for i in range(length):
-                tmp = L[i]
-                tmark = self.element.text(tmp, x=[i * dx + x], y=[y], text_anchor="middle")
-                tmark["class"] = "muted"
-                tmark["xml:space"] = "preserve"
-                g.add(tmark)
 
         mstep = 2 * int(self.lane.hscale)
         mmstep = mstep * self.lane.xs
@@ -346,12 +373,12 @@ class WaveDrom(SVGBase):
                                    style="stroke:#888;stroke-width:0.5;stroke-dasharray:1,3")
             g.add(gg)
 
-        captext(g, self.lane, "head", -33 if self.lane.yh0 else -13)
-        captext(g, self.lane, "foot", gy + (45 if self.lane.yf0 else 25))
-        ticktock(g, self.lane, "head", "tick",          0, mmstep,      -5, marks + 1)
-        ticktock(g, self.lane, "head", "tock", mmstep / 2, mmstep,      -5, marks)
-        ticktock(g, self.lane, "foot", "tick",          0, mmstep, gy + 15, marks + 1)
-        ticktock(g, self.lane, "foot", "tock", mmstep / 2, mmstep, gy + 15, marks)
+        self.captext(g, self.lane, "head", -33 if self.lane.yh0 else -13)
+        self.captext(g, self.lane, "foot", gy + (45 if self.lane.yf0 else 25))
+        self.ticktock(g, self.lane, "head", "tick",          0, mmstep,      -5, marks + 1)
+        self.ticktock(g, self.lane, "head", "tock", mmstep / 2, mmstep,      -5, marks)
+        self.ticktock(g, self.lane, "foot", "tick",          0, mmstep, gy + 15, marks + 1)
+        self.ticktock(g, self.lane, "foot", "tock", mmstep / 2, mmstep, gy + 15, marks)
 
     def render_labels(self, root, source, index):
         if source:
@@ -359,7 +386,7 @@ class WaveDrom(SVGBase):
 
             for idx, val in enumerate(source):
                 self.lane.period = val.get("period", 1)
-                self.lane.phase = int(val.get("phase", 0) * 2)
+                self.lane.phase = val.get("phase", 0) * 2
 
                 dy = self.lane.y0 + idx * self.lane.yo
                 g = self.container.g(id="labels_{i}_{index}".format(i=idx, index=index))
@@ -401,6 +428,131 @@ class WaveDrom(SVGBase):
                 gg.add(g)
             root.add(gg)
 
+    def arc_shape(self, Edge, frm, to):
+        dx = float(to.x) - float(frm.x)
+        dy = float(to.y) - float(frm.y)
+        lx = (float(frm.x) + float(to.x)) / 2
+        ly = (float(frm.y) + float(to.y)) / 2
+
+        const_style = AttrDict({
+            "a": "marker-end:url(#arrowhead);stroke:#0041c4;stroke-width:1;fill:none",
+            "b": "marker-end:url(#arrowhead);marker-start:url(#arrowtail);stroke:#0041c4;stroke-width:1;fill:none"
+        })
+
+        pattern = {
+            "-": { },
+            "~": {"d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                  dx=(0.7 * dx), dy=0,
+                                                                                  dxx=(0.3 * dx), dyy=dy,
+                                                                                  dxxx=dx, dyyy=dy)},
+            "-~": {"d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                   dx=(0.7 * dx), dy=0,
+                                                                                   dxx=dx, dyy=dy,
+                                                                                   dxxx=dx, dyyy=dy)},
+            "~-": {"d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                   dx=0, dy=0,
+                                                                                   dxx=(0.3 * dx), dyy=dy,
+                                                                                   dxxx=dx, dyyy=dy)},
+            "-|": {"d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
+                                                                   dx=dx, dy=0,
+                                                                   dxx=0, dyy=dy)},
+            "|-": {"d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
+                                                                   dx=0, dy=dy,
+                                                                   dxx=dx, dyy=0)},
+            "-|-": {"d": "m {fx},{fy} {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                  dx=(dx / 2), dy=0,
+                                                                                  dxx=0, dyy=dy,
+                                                                                  dxxx=(dx / 2), dyyy=0)},
+            "->": {"style": const_style.a},
+            "~>": {"style": const_style.a,
+                   "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                   dx=(0.7 * dx), dy=0,
+                                                                                   dxx=(0.3 * dx), dyy=dy,
+                                                                                   dxxx=dx, dyyy=dy)},
+            "-~>": {"style": const_style.a,
+                    "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                    dx=(0.7 * dx), dy=0,
+                                                                                    dxx=dx, dyy=dy,
+                                                                                    dxxx=dx, dyyy=dy)},
+            "~->": {"style": const_style.a,
+                    "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                    dx=0, dy=0,
+                                                                                    dxx=(0.3 * dx), dyy=dy,
+                                                                                    dxxx=dx, dyyy=dy)},
+            "-|>": {"style": const_style.a,
+                    "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
+                                                                    dx=dx, dy=0,
+                                                                    dxx=0, dyy=dy)},
+            "|->": {"style": const_style.a,
+                    "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
+                                                                    dx=0, dy=dy,
+                                                                    dxx=dx, dyy=0
+                                                                    )},
+            "-|->": {"style": const_style.a,
+                     "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                   dx=(dx / 2), dy=0,
+                                                                                   dxx=0, dyy=dy,
+                                                                                   dxxx=(dx / 2), dyyy=0
+                                                                                   )},
+            "<->": {"style": const_style.b},
+            "<~>": {"style": const_style.b,
+                    "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                    dx=(0.7 * dx), dy=0,
+                                                                                    dxx=(0.3 * dx), dyy=dy,
+                                                                                    dxxx=dx, dyyy=dy
+                                                                                    )},
+            "<-~>": {"style": const_style.b,
+                     "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                     dx=(0.7 * dx), dy=0,
+                                                                                     dxx=dx, dyy=dy,
+                                                                                     dxxx=dx, dyyy=dy
+                                                                                     )},
+            "<-|>": {"style": const_style.b,
+                     "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
+                                                                     dx=dx, dy=0,
+                                                                     dxx=0, dyy=dy
+                                                                     )},
+            "<-|->": {"style": const_style.b,
+                      "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
+                                                                                    dx=(dx / 2), dy=0,
+                                                                                    dxx=0, dyy=dy,
+                                                                                    dxxx=(dx / 2), dyyy=0,
+                                                                                    )}
+        }
+
+        props = AttrDict({"lx": lx, "ly": ly, "style": "fill:none;stroke:#00F;stroke-width:1",
+                           "d": "M {fx},{fy} {tx},{ty}".format(fx=frm.x, fy=frm.y, tx=to.x, ty=to.y)})
+
+        if Edge.shape in pattern:
+            props.d = pattern[Edge.shape].get("d", props.d)
+            props.style = pattern[Edge.shape].get("style", props.style)
+
+            if Edge.label:
+                if Edge.shape in ["-~", "-~>", "<-~>"]:
+                    props.lx = float(frm.x) + (float(to.x) - float(frm.x)) * 0.75
+                elif Edge.shape in ["~-", "~->"]:
+                    props.lx = float(frm.x) + (float(to.x) - float(frm.x)) * 0.25
+                elif Edge.shape in ["-|", "-|>", "<-|>"]:
+                    props.lx = float(to.x)
+                elif Edge.shape in ["|-", "|->"]:
+                    props.lx = float(frm.x)
+
+        return props
+
+    def render_arc(self, Edge, frm, to, shapeProps):
+        return self.element.path(id="gmark_{frm}_{to}".format(frm=Edge.frm, to=Edge.to),
+                                  d=shapeProps.d, style=shapeProps.style)
+
+    def render_label(self, p, text):
+        w = len(text) * self.font_width
+        g = self.container.g(transform = "translate({},{})".format(p.x, p.y))
+        rect = self.element.rect(insert=(0-w/2, -5), size=(w, 10), style="fill:#FFF;")
+        label = self.element.text("", style="font-size:8px;", text_anchor="middle", y=[3])
+        label.add(self.element.tspan(text))
+        g.add(rect)
+        g.add(label)
+        return g
+
     def render_arcs(self, root, source, index, top):
         Edge = AttrDict({"words": [], "frm": 0, "shape": "", "to": 0, "label": ""})
         Events = AttrDict({})
@@ -408,7 +560,7 @@ class WaveDrom(SVGBase):
         if source:
             for idx, val in enumerate(source):
                 self.lane.period = val.get("period", 1)
-                self.lane.phase = int(val.get("phase", 0) * 2)
+                self.lane.phase = val.get("phase", 0) * 2
                 text = val.get("node")
                 if text:
                     Stack = list(text)
@@ -432,10 +584,6 @@ class WaveDrom(SVGBase):
 
             gg = self.container.g(id="wavearcs_{index}".format(index=index))
 
-            const_style = AttrDict({
-                "a": "marker-end:url(#arrowhead);stroke:#0041c4;stroke-width:1;fill:none",
-                "b": "marker-end:url(#arrowhead);marker-start:url(#arrowtail);stroke:#0041c4;stroke-width:1;fill:none"
-            })
             if top.get("edge"):
                 for i, val in enumerate(top["edge"]):
                     Edge.words = val.split()
@@ -446,133 +594,18 @@ class WaveDrom(SVGBase):
                     Edge.shape = Edge.words[0][1:-1]
                     frm = AttrDict(Events[Edge.frm])
                     to = AttrDict(Events[Edge.to])
-                    dx = float(to.x) - float(frm.x)
-                    dy = float(to.y) - float(frm.y)
-                    lx = (float(frm.x) + float(to.x)) / 2
-                    ly = (float(frm.y) + float(to.y)) / 2
-                    pattern = {
-                        "~": {"d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                              dx=(0.7 * dx), dy=0,
-                                                                                              dxx=(0.3 * dx), dyy=dy,
-                                                                                              dxxx=dx, dyyy=dy)},
-                        "-~": {"d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                               dx=(0.7 * dx), dy=0,
-                                                                                               dxx=dx, dyy=dy,
-                                                                                               dxxx=dx, dyyy=dy)},
-                        "~-": {"d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                               dx=0, dy=0,
-                                                                                               dxx=(0.3 * dx), dyy=dy,
-                                                                                               dxxx=dx, dyyy=dy)},
-                        "-|": {"d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
-                                                                               dx=dx, dy=0,
-                                                                               dxx=0, dyy=dy)},
-                        "|-": {"d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
-                                                                               dx=0, dy=dy,
-                                                                               dxx=dx, dyy=0)},
-                        "-|-": {"d": "m {fx},{fy} {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                              dx=(dx / 2), dy=0,
-                                                                                              dxx=0, dyy=dy,
-                                                                                              dxxx=(dx / 2), dyyy=0)},
-                        "->": {"style": const_style.a},
-                        "~>": {"style": const_style.a,
-                               "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                               dx=(0.7 * dx), dy=0,
-                                                                                               dxx=(0.3 * dx), dyy=dy,
-                                                                                               dxxx=dx, dyyy=dy)},
-                        "-~>": {"style": const_style.a,
-                                "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                                dx=(0.7 * dx), dy=0,
-                                                                                                dxx=dx, dyy=dy,
-                                                                                                dxxx=dx, dyyy=dy)},
-                        "~->": {"style": const_style.a,
-                                "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                                dx=0, dy=0,
-                                                                                                dxx=(0.3 * dx), dyy=dy,
-                                                                                                dxxx=dx, dyyy=dy)},
-                        "-|>": {"style": const_style.a,
-                                "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
-                                                                                dx=dx, dy=0,
-                                                                                dxx=0, dyy=dy)},
-                        "|->": {"style": const_style.a,
-                                "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
-                                                                                dx=0, dy=dy,
-                                                                                dxx=dx, dyy=0
-                                                                                )},
-                        "-|->": {"style": const_style.a,
-                                 "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                               dx=(dx / 2), dy=0,
-                                                                                               dxx=0, dyy=dy,
-                                                                                               dxxx=(dx / 2), dyyy=0
-                                                                                               )},
-                        "<->": {"style": const_style.b},
-                        "<~>": {"style": const_style.b,
-                                "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                                dx=(0.7 * dx), dy=0,
-                                                                                                dxx=(0.3 * dx), dyy=dy,
-                                                                                                dxxx=dx, dyyy=dy
-                                                                                                )},
-                        "<-~>": {"style": const_style.b,
-                                 "d": "M {fx},{fy} c {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                                 dx=(0.7 * dx), dy=0,
-                                                                                                 dxx=dx, dyy=dy,
-                                                                                                 dxxx=dx, dyyy=dy
-                                                                                                 )},
-                        "<-|>": {"style": const_style.b,
-                                 "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy}".format(fx=frm.x, fy=frm.y,
-                                                                                 dx=dx, dy=0,
-                                                                                 dxx=0, dyy=dy
-                                                                                 )},
-                        "<-|->": {"style": const_style.b,
-                                  "d": "m {fx},{fy} {dx},{dy} {dxx},{dyy} {dxxx},{dyyy}".format(fx=frm.x, fy=frm.y,
-                                                                                                dx=(dx / 2), dy=0,
-                                                                                                dxx=0, dyy=dy,
-                                                                                                dxxx=(dx / 2), dyyy=0,
-                                                                                                )}
-                    }
-                    pat = pattern.get(Edge.shape, {"style": "fill:none;stroke:#00F;stroke-width:1",
-                                                   "d": "M {fx},{fy} {tx},{ty}".format(fx=frm.x, fy=frm.y,
-                                                                                       tx=to.x, ty=to.y)
-                                                   })
-                    # gmark[1].update(pat)
-                    gmark = self.element.path(id="gmark_{frm}_{to}".format(frm=Edge.frm, to=Edge.to),
-                                              d=pat.get("d", "M {fx},{fy} {tx},{ty}".format(fx=frm.x, fy=frm.y,
-                                                                                            tx=to.x, ty=to.y)),
-                                              style=pat.get("style", "fill:none;stroke:#00F;stroke-width:1"))
-                    gg.add(gmark)
+
+                    shapeProps = self.arc_shape(Edge, frm, to)
+                    gg.add(self.render_arc(Edge, frm, to, shapeProps))
 
                     if Edge.label:
-                        if Edge.shape in ["-~", "-~>", "<-~>"]:
-                            lx = float(frm.x) + (float(to.x) - float(frm.x)) * 0.75
-                        elif Edge.shape in ["~-", "~->"]:
-                            lx = float(frm.x) + (float(to.x) - float(frm.x)) * 0.25
-                        elif Edge.shape in ["-|", "-|>", "<-|>"]:
-                            lx = float(to.x)
-                        elif Edge.shape in ["|-", "|->"]:
-                            lx = float(frm.x)
+                        gg.add(self.render_label(AttrDict({"x": shapeProps.lx, "y": shapeProps.ly}), Edge.label))
 
-                        lwidth = len(Edge.label) * self.font_width
-                        label = self.element.text("", style="font-size:10px;", text_anchor="middle",
-                                                  x=[int(lx)], y=[int(ly + 3)])
-                        label.add(self.element.tspan(Edge.label))
-                        underlabel = self.element.rect(insert=(int(lx - lwidth / 2), int(ly - 5)),
-                                                       size=(lwidth, 9), style="fill:#FFF;")
-                        gg.add(underlabel)
-                        gg.add(label)
 
             for k in Events:
                 if k.islower():
                     if int(Events[k].x) > 0:
-                        lwidth = len(k) * self.font_width
-                        lx = float(Events[k].x) - float(lwidth) / 2
-                        ly = int(Events[k].y) - 4
-                        underlabel = self.element.rect(insert=(lx, ly),
-                                                       size=(lwidth, 8), style="fill:#FFF;")
-                        gg.add(underlabel)
-                        lx = int(Events[k].x)
-                        ly = int(Events[k].y) + 2
-                        label = self.element.text(k, style="font-size:8px;", text_anchor="middle",
-                                                  x=[lx], y=[ly])
-                        gg.add(label)
+                        gg.add(self.render_label(AttrDict({"x": Events[k].x, "y": Events[k].y}), k))
 
             root.add(gg)
 
@@ -613,25 +646,28 @@ class WaveDrom(SVGBase):
                 self.lane.foot["text"] = source["foot"]["text"]
 
     def rec(self, tmp=[], state={}):
-        name = str(tmp[0])
-        delta_x = 25
+        name = None
+        delta = AttrDict({"x": 10})
+        if isinstance(tmp[0], str) or isinstance(tmp[0], int):
+            name = str(tmp[0])
+            delta.x = 25
 
-        state.x += delta_x
+        state.x += delta.x
         for idx, val in enumerate(tmp):
-            if type(val) is list:
+            if isinstance(val, list):
                 old_y = state.y
                 self.rec(val, state)
                 state["groups"].append({"x": state.xx,
                                         "y": old_y,
                                         "height": state.y - old_y,
                                         "name": state.name})
-            elif type(val) is dict:
+            elif isinstance(val, dict):
                 state["lanes"].append(val)
                 state["width"].append(state.x)
                 state.y += 1
 
         state.xx = state.x
-        state.x -= delta_x
+        state.x -= delta.x
         state.name = name
 
     def another_template(self, index, source):
@@ -658,7 +694,6 @@ class WaveDrom(SVGBase):
             [ret.add(gen_elem(e)) for e in elem[2:]]
 
             return ret
-        # default.add_stylesheet("css/default.css", title="default")
         skin = waveskin.WaveSkin["default"]
 
         if source.get("config") and source.get("config").get("skin"):
@@ -667,12 +702,15 @@ class WaveDrom(SVGBase):
 
         template = svgwrite.Drawing(id="svgcontent_{index}".format(index=index))
         if index == 0:
-            template.defs.add(template.style(css.css.default))
+            template.add(template.style(css.css.default))
             [template.defs.add(get_container(e)) for e in skin[3][1:]]
             self.lane.xs = int(skin[3][1][2][1]["width"])
             self.lane.ys = int(skin[3][1][2][1]["height"])
             self.lane.xlabel = int(skin[3][1][2][1]["x"])
             self.lane.ym = int(skin[3][1][2][1]["y"])
+
+        template["class"] = "WaveDrom"
+        template["overflow"] = "hidden"
 
         return template
 
@@ -717,7 +755,7 @@ class WaveDrom(SVGBase):
 
         parent.extend(e)
 
-    def render_waveform(self, index=0, source={}, output=[]):
+    def render_waveform(self, index=0, source={}, output=[], strict_js_features=False):
         xmax = 0
 
         if source.get("signal"):
@@ -734,7 +772,8 @@ class WaveDrom(SVGBase):
                 xmax = max(xmax, (val + ret.width[i]))
             self.render_marks(lanes, content, index)
             self.render_gaps(lanes, ret.lanes, index)
-            self.render_labels(lanes, ret.lanes, index)
+            if not strict_js_features:
+                self.render_labels(lanes, ret.lanes, index)
             self.render_arcs(lanes, ret.lanes, index, source)
             self.render_groups(groups, ret.groups, index)
             self.lane.xg = int(math.ceil(float(xmax - self.lane.tgo) / float(self.lane.xs))) * self.lane.xs
@@ -744,7 +783,7 @@ class WaveDrom(SVGBase):
             template["height"] = height
             template.viewbox(0, 0, width, height)
             dx = self.lane.xg + 0.5
-            dy = float(self.lane.yh0) + float(self.lane.yh1)
+            dy = float(self.lane.yh0) + float(self.lane.yh1) + 0.5
             lanes.translate(dx, dy)
 
             waves.add(lanes)
@@ -758,7 +797,7 @@ class WaveDrom(SVGBase):
             dy = groups[i].y * self.lane.yo + 3.5 + self.lane.yh0 + self.lane.yh1
             h = int(groups[i]["height"] * self.lane.yo - 16)
             group = self.element.path(id="group_{i}_{index}".format(i=i, index=index),
-                                      d="m {dx},{dy} c -3,0 -5,2 -5,5 l 0,{h}".format(dx=dx, dy=dy, h=h),
+                                      d="m {dx},{dy} c -3,0 -5,2 -5,5 l 0,{h} c 0,3 2,5 5,5".format(dx=dx, dy=dy, h=h),
                                       style="stroke:#0041c4;stroke-width:1;fill:none")
 
             root.add(group)
@@ -779,11 +818,37 @@ class WaveDrom(SVGBase):
             label.add(gg)
             root.add(label)
 
+    def render_gap_uses(self, wave, g):
+        subCycle = False
+
+        if wave:
+            Stack = deque(wave)
+            pos = 0
+            while len(Stack):
+                next = Stack.popleft()
+                if next == '<':
+                    subCycle = True
+                    continue
+                if next == '>':
+                    subCycle = False
+                    continue
+                if subCycle:
+                    pos += self.lane.period
+                else:
+                    pos += 2 * self.lane.period
+                if next == "|":
+                    if subCycle:
+                        dx = float(self.lane.xs) * pos * float(self.lane.hscale) - float(self.lane.phase)
+                    else:
+                        dx = float(self.lane.xs) * (pos - self.lane.period) * float(self.lane.hscale) - float(
+                            self.lane.phase)
+                    b = self.container.use(href="#gap")
+                    b.translate(dx)
+                    g.add(b)
+
     def render_gaps(self, root, source, index):
         if source:
-
             gg = self.container.g(id="wavegaps_{index}".format(index=index))
-            subCycle = False
 
             for idx, val in enumerate(source):
                 self.lane.period = val.get("period", 1)
@@ -793,31 +858,11 @@ class WaveDrom(SVGBase):
                 g = self.container.g(id="wavegap_{i}_{index}".format(i=idx, index=index))
                 g.translate(0, dy)
 
-                if val.get("wave"):
-                    text = val["wave"]
-                    Stack = deque(text)
-                    pos = 0
-                    while len(Stack):
-                        next = Stack.popleft()
-                        if next == '<':
-                            subCycle = True
-                            continue
-                        if next == '>':
-                            subCycle = False
-                            continue
-                        if subCycle:
-                            pos += self.lane.period
-                        else:
-                            pos += 2 * self.lane.period
-                        if next == "|":
-                            if subCycle:
-                                dx = float(self.lane.xs) * pos * float(self.lane.hscale) - float(self.lane.phase)
-                            else:
-                                dx = float(self.lane.xs) * (pos - self.lane.period) * float(self.lane.hscale) - float(self.lane.phase)
-                            b = self.container.use(href="#gap")
-                            b.translate(dx)
-                            g.add(b)
+                if "wave" in val:
+                    self.render_gap_uses(val["wave"], g)
+
                 gg.add(g)
+
             root.add(gg)
 
     def is_type_str(self, var):

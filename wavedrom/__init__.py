@@ -23,6 +23,8 @@
 
 import argparse
 import json
+import os
+import sys
 
 from .waveform import WaveDrom
 from .assign import Assign
@@ -30,36 +32,32 @@ from .version import version
 from .bitfield import BitField
 
 
-def render(source="", output=[]):
+def render(source="", output=[], strict_js_features = False):
     source = json.loads(source)
     if source.get("signal"):
-        return WaveDrom().render_waveform(0, source, output)
+        return WaveDrom().render_waveform(0, source, output, strict_js_features)
     elif source.get("assign"):
         return Assign().render(0, source, output)
     elif source.get("reg"):
         return BitField().renderJson(source)
 
 
-def main(args=None):
-    if not args:
-        parser = argparse.ArgumentParser(description="")
-        parser.add_argument("--input", "-i", help="<input wavedrom source filename>",
-                            type=argparse.FileType("r"), default="-")
-        parser.add_argument("--svg", "-s", help="<output SVG image file name>")
-        args = parser.parse_args()
+def render_write(source, output, strict_js_features = False):
+    jinput = source.read()
+    out = render(jinput, strict_js_features=strict_js_features)
+    out.write(output)
 
-    output = []
-    inputfile = args.input
-    outputfile = args.svg
 
-    if not outputfile:
-        parser.print_help()
-    else:
-        try:
-            with open(inputfile, "r") as f:
-                jinput = f.read()
-        except(TypeError):
-            jinput = inputfile.read()
+def render_file(source, output, strict_js_features = False):
+    render_write(open(source, "r"), open(output, "w"), strict_js_features=strict_js_features)
 
-        output = render(jinput)
-        output.saveas(outputfile)
+
+def main():
+    parser = argparse.ArgumentParser(description="")
+    parser.add_argument("--input", "-i", help="<input wavedrom source filename>",
+                        required=True, type=argparse.FileType('r'))
+    parser.add_argument("--svg", "-s", help="<output SVG image file name>",
+                        nargs='?', type=argparse.FileType('w'), default=sys.stdout)
+    args = parser.parse_args()
+
+    render_write(args.input, args.svg, False)
